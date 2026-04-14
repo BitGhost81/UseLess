@@ -5,8 +5,13 @@ import google.generativeai as genai
 # ==========================================
 # CONFIGURATION
 # ==========================================
-API_KEY = "AIzaSyBTWc17L9eS4c7IpeNQsxCh2iAdqB9jhyM"
-# Adding transport='rest' ensures we hit the stable endpoint
+# Load the variables from the .env file
+load_dotenv()
+
+# Get the key from the environment
+API_KEY = os.getenv("GEMINI_API_KEY")
+
+# Configure the AI
 genai.configure(api_key=API_KEY, transport='rest')
 
 # Use the 2026 stable model ID
