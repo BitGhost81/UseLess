@@ -1,4 +1,4 @@
-# Upgraded Exam Helper
+# Upgraded BITCH NIGGA
 
 This version of the application has been completely rebuilt to address the flaws you mentioned.
 
