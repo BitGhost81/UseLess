@@ -1,0 +1,96 @@
+import tkinter as tk
+from pynput import keyboard
+import threading
+import time
+import ctypes
+import platform
+from ai_logic import get_ai_answer
+from led_control import blink_caps_lock
+
+# Windows-specific constants for non-focus-stealing window
+GWL_EXSTYLE = -20
+WS_EX_NOACTIVATE = 0x08000000
+WS_EX_TOPMOST = 0x00000008
+
+class ExamHelperApp:
+    def __init__(self):
+        self.root = tk.Tk()
+        self.root.title("Helper")
+        self.root.geometry("200x100+50+50")
+        self.root.attributes("-topmost", True)
+        self.root.overrideredirect(True)
+        self.root.attributes("-alpha", 0.9)
+        
+        self.frame = tk.Frame(self.root, bg="#1e1e1e", bd=2, relief="ridge")
+        self.frame.pack(expand=True, fill="both")
+        
+        self.label = tk.Label(
+            self.frame, 
+            text="IDLE", 
+            fg="#00ff00", 
+            bg="#1e1e1e", 
+            font=("Consolas", 14, "bold")
+        )
+        self.label.pack(expand=True)
+        
+        # Initially hide the window
+        self.root.withdraw()
+        
+        self.is_visible = False
+        self.setup_windows_attributes()
+        
+        # Start hotkey listener
+        self.listener = keyboard.GlobalHotKeys({
+            '<ctrl>+<alt>+s': self.on_solve,
+            '<ctrl>+<alt>+o': self.toggle_overlay
+        })
+        self.listener.start()
+
+    def setup_windows_attributes(self):
+        if platform.system() == "Windows":
+            # Use ctypes to set WS_EX_NOACTIVATE
+            hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id())
+            style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+            ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style | WS_EX_NOACTIVATE | WS_EX_TOPMOST)
+
+    def toggle_overlay(self):
+        if self.is_visible:
+            self.root.withdraw()
+        else:
+            self.root.deiconify()
+        self.is_visible = not self.is_visible
+
+    def update_ui(self, text, color="#00ff00"):
+        self.label.config(text=text, fg=color)
+
+    def on_solve(self):
+        threading.Thread(target=self.solve_process, daemon=True).start()
+
+    def solve_process(self):
+        self.root.after(0, self.update_ui, "...", "#ffff00")
+        if not self.is_visible:
+            self.root.after(0, self.root.deiconify)
+        
+        answer = get_ai_answer()
+        
+        color = "#00ff00" if answer != "ERR" else "#ff0000"
+        self.root.after(0, self.update_ui, f"ANS: {answer}", color)
+        
+        # Blink LED
+        if answer in ['A', 'B', 'C', 'D', 'E']:
+            times = ord(answer) - ord('A') + 1
+            blink_caps_lock(times)
+        
+        # Auto-hide after 5 seconds if it was hidden before
+        time.sleep(5)
+        if not self.is_visible:
+            self.root.after(0, self.root.withdraw)
+        else:
+            self.root.after(0, self.update_ui, "IDLE")
+
+    def run(self):
+        self.root.mainloop()
+
+if __name__ == "__main__":
+    app = ExamHelperApp()
+    app.run()
