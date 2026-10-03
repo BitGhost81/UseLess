@@ -51,8 +51,8 @@ class ExamHelperApp:
         self.listener = keyboard.GlobalHotKeys({
             '<ctrl>+<alt>+s': self.on_solve,
             '<ctrl>+<alt>+o': self.toggle_overlay,
-            '<ctrl>+<alt>+left': self.show_previous_answer,
-            '<ctrl>+<alt>+right': self.show_next_answer
+            '<ctrl>+<alt>+<left>': self.show_previous_answer,
+            '<ctrl>+<alt>+<right>': self.show_next_answer
         })
         self.listener.start()
 
