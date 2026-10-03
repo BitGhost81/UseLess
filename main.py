@@ -7,7 +7,7 @@ import logging
 import platform
 
 from PIL import Image, ImageDraw
-from logging_utils import configure_logging, read_recent_logs
+from logging_utils import configure_logging, mark_session_end, read_recent_logs
 
 logger = configure_logging()
 
@@ -24,6 +24,8 @@ from led_control import blink_caps_lock
 GWL_EXSTYLE = -20
 WS_EX_NOACTIVATE = 0x08000000
 WS_EX_TOPMOST = 0x00000008
+SW_HIDE = 0
+SW_SHOW = 5
 
 class ExamHelperApp:
     def __init__(self):
@@ -54,6 +56,8 @@ class ExamHelperApp:
         self._shutdown = False
         self.tray_icon = None
         self.tray_thread = None
+        self._console_hwnd = None
+        self._console_visible = True
 
         # Prevent repeated hotkey presses from starting overlapping API calls.
         self._solve_lock = threading.Lock()
@@ -64,6 +68,7 @@ class ExamHelperApp:
         self._answer_history = []
         self._history_index = -1
         self.setup_windows_attributes()
+        self.hide_console_on_windows()
 
         # Start hotkey listener
         self.listener = keyboard.GlobalHotKeys({
@@ -111,6 +116,7 @@ class ExamHelperApp:
         try:
             menu = pystray.Menu(
                 pystray.MenuItem("Show/Hide Overlay", self._tray_toggle_overlay),
+                pystray.MenuItem("Show/Hide Console", self._tray_toggle_console),
                 pystray.MenuItem("View Logs", self._tray_view_logs),
                 pystray.MenuItem("Exit", self._tray_exit),
             )
@@ -144,8 +150,42 @@ class ExamHelperApp:
     def _tray_view_logs(self, icon, item):
         self.root.after(0, self.show_logs)
 
+    def _tray_toggle_console(self, icon, item):
+        self.root.after(0, self.toggle_console)
+
     def _tray_exit(self, icon, item):
         self.root.after(0, self.on_exit)
+
+    def hide_console_on_windows(self):
+        if platform.system() != "Windows":
+            return
+        try:
+            self._console_hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+            if self._console_hwnd:
+                ctypes.windll.user32.ShowWindow(self._console_hwnd, SW_HIDE)
+                self._console_visible = False
+                logger.info("Windows console hidden at startup")
+        except Exception:
+            logger.exception("Unable to hide the Windows console at startup")
+
+    def toggle_console(self):
+        if platform.system() != "Windows":
+            logger.info("Console visibility toggle ignored: not running on Windows")
+            return
+        try:
+            if not self._console_hwnd:
+                self._console_hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+            if not self._console_hwnd:
+                logger.info("Console visibility toggle ignored: no attached console")
+                return
+            self._console_visible = not self._console_visible
+            ctypes.windll.user32.ShowWindow(
+                self._console_hwnd,
+                SW_SHOW if self._console_visible else SW_HIDE,
+            )
+            logger.info("Windows console visibility changed: visible=%s", self._console_visible)
+        except Exception:
+            logger.exception("Unable to change Windows console visibility")
 
     def toggle_overlay(self):
         if self.is_visible:
@@ -310,6 +350,7 @@ class ExamHelperApp:
             except Exception:
                 logger.exception("Error stopping system tray icon")
         logger.info("Application shutdown complete")
+        mark_session_end()
         self.root.destroy()
 
     def run(self):

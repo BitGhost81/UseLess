@@ -34,9 +34,15 @@ This is a Windows desktop helper that captures the entire screen and sends it to
     ```bash
     python main.py
     ```
-    To run without a visible command prompt on Windows, use `pythonw main.py` instead.
+    `python main.py` is useful for development/debugging. On Windows it starts normally, then hides its console window while keeping the process and tray icon running. Use the tray's `Show/Hide Console` item to temporarily show or hide that console.
 
-The application places a UseLess icon in the Windows system tray. Its menu provides `Show/Hide Overlay`, `View Logs`, and `Exit`. `View Logs` opens the recent entries from the rotating `logs/useless.log` file. The log records application lifecycle events, screenshot-capture timing, Gemini request start/end timestamps and duration, errors, and answer-history navigation; it does not record API keys, screenshots, or prompts.
+    For normal background/tray usage, use:
+    ```bash
+    pythonw main.py
+    ```
+    `pythonw main.py` remains the cleanest way to launch without a console.
+
+The application places a UseLess icon in the Windows system tray. Its menu provides `Show/Hide Overlay`, `Show/Hide Console`, `View Logs`, and `Exit`. `View Logs` opens the current session from `logs/useless.log`. At startup, the previous current log is archived as a timestamped `logs/useless_*.log` file; the ten most recent archived sessions are retained. The current log is also protected by the existing size-based rotation. Logs do not record API keys, screenshots, prompts, or image contents.
 
 ## How to use
 
