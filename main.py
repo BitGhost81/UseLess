@@ -3,14 +3,27 @@ from pynput import keyboard
 import threading
 import time
 import ctypes
+import logging
 import platform
+
+from PIL import Image, ImageDraw
+
+try:
+    import pystray
+except ImportError:
+    pystray = None
+
 from ai_logic import get_ai_answer
 from led_control import blink_caps_lock
+from logging_utils import configure_logging, read_recent_logs
 
 # Windows-specific constants for non-focus-stealing window
 GWL_EXSTYLE = -20
 WS_EX_NOACTIVATE = 0x08000000
 WS_EX_TOPMOST = 0x00000008
+
+logger = configure_logging()
+
 
 class ExamHelperApp:
     def __init__(self):
@@ -20,23 +33,28 @@ class ExamHelperApp:
         self.root.attributes("-topmost", True)
         self.root.overrideredirect(True)
         self.root.attributes("-alpha", 0.9)
-        
+        self.root.protocol("WM_DELETE_WINDOW", self.on_exit)
+
         self.frame = tk.Frame(self.root, bg="#1e1e1e", bd=2, relief="ridge")
         self.frame.pack(expand=True, fill="both")
-        
+
         self.label = tk.Label(
-            self.frame, 
-            text="IDLE", 
-            fg="#00ff00", 
-            bg="#1e1e1e", 
+            self.frame,
+            text="IDLE",
+            fg="#00ff00",
+            bg="#1e1e1e",
             font=("Consolas", 14, "bold")
         )
         self.label.pack(expand=True)
-        
+
         # Initially hide the window
         self.root.withdraw()
-        
+
         self.is_visible = False
+        self._shutdown = False
+        self.tray_icon = None
+        self.tray_thread = None
+
         # Prevent repeated hotkey presses from starting overlapping API calls.
         self._solve_lock = threading.Lock()
         self._cooldown_seconds = 0.5
@@ -46,7 +64,7 @@ class ExamHelperApp:
         self._answer_history = []
         self._history_index = -1
         self.setup_windows_attributes()
-        
+
         # Start hotkey listener
         self.listener = keyboard.GlobalHotKeys({
             '<ctrl>+<alt>+s': self.on_solve,
@@ -55,13 +73,65 @@ class ExamHelperApp:
             '<ctrl>+<alt>+<right>': self.show_next_answer
         })
         self.listener.start()
+        self._start_tray()
+        logger.info("Application started")
 
     def setup_windows_attributes(self):
         if platform.system() == "Windows":
             # Use ctypes to set WS_EX_NOACTIVATE
             hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id())
             style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-            ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style | WS_EX_NOACTIVATE | WS_EX_TOPMOST)
+            ctypes.windll.user32.SetWindowLongW(
+                hwnd,
+                GWL_EXSTYLE,
+                style | WS_EX_NOACTIVATE | WS_EX_TOPMOST,
+            )
+
+    def _make_tray_image(self):
+        image = Image.new("RGB", (64, 64), "#1e1e1e")
+        draw = ImageDraw.Draw(image)
+        draw.ellipse((8, 8, 56, 56), fill="#00aa66", outline="#00ff00", width=3)
+        draw.text((25, 19), "U", fill="white")
+        return image
+
+    def _start_tray(self):
+        if pystray is None:
+            logger.warning("System tray unavailable: install pystray on Windows")
+            return
+
+        menu = pystray.Menu(
+            pystray.MenuItem("Show/Hide Overlay", self._tray_toggle_overlay),
+            pystray.MenuItem("View Logs", self._tray_view_logs),
+            pystray.MenuItem("Exit", self._tray_exit),
+        )
+        self.tray_icon = pystray.Icon(
+            "useless",
+            self._make_tray_image(),
+            "UseLess",
+            menu,
+        )
+        self.tray_thread = threading.Thread(
+            target=self._run_tray,
+            name="UseLessTray",
+            daemon=True,
+        )
+        self.tray_thread.start()
+        logger.info("System tray icon started")
+
+    def _run_tray(self):
+        try:
+            self.tray_icon.run()
+        except Exception:
+            logger.exception("System tray stopped unexpectedly")
+
+    def _tray_toggle_overlay(self, icon, item):
+        self.root.after(0, self.toggle_overlay)
+
+    def _tray_view_logs(self, icon, item):
+        self.root.after(0, self.show_logs)
+
+    def _tray_exit(self, icon, item):
+        self.root.after(0, self.on_exit)
 
     def toggle_overlay(self):
         if self.is_visible:
@@ -69,6 +139,23 @@ class ExamHelperApp:
         else:
             self.root.deiconify()
         self.is_visible = not self.is_visible
+        logger.info("Overlay visibility changed: visible=%s", self.is_visible)
+
+    def show_logs(self):
+        logger.info("Log viewer opened")
+        window = tk.Toplevel(self.root)
+        window.title("UseLess Logs")
+        window.geometry("800x500")
+        window.attributes("-topmost", True)
+
+        text = tk.Text(window, wrap="none", bg="#111111", fg="#eeeeee")
+        scrollbar = tk.Scrollbar(window, command=text.yview)
+        text.configure(yscrollcommand=scrollbar.set)
+        text.pack(side="left", expand=True, fill="both")
+        scrollbar.pack(side="right", fill="y")
+        text.insert("1.0", read_recent_logs())
+        text.configure(state="disabled")
+        text.see("end")
 
     def update_ui(self, text, color="#00ff00"):
         self.label.config(text=text, fg=color)
@@ -106,11 +193,13 @@ class ExamHelperApp:
     def show_previous_answer(self):
         display = self._navigate_history(-1)
         if display is not None:
+            logger.info("Answer history navigation: previous, index=%s", self._history_index + 1)
             self.root.after(0, self.update_ui, display, "#00ff00")
 
     def show_next_answer(self):
         display = self._navigate_history(1)
         if display is not None:
+            logger.info("Answer history navigation: next, index=%s", self._history_index + 1)
             self.root.after(0, self.update_ui, display, "#00ff00")
 
     def on_solve(self):
@@ -118,13 +207,16 @@ class ExamHelperApp:
         # still running. Acquire before starting the worker so only one
         # screenshot submission can be in flight at a time.
         if not self._solve_lock.acquire(blocking=False):
+            logger.info("Solve request ignored: another request is in progress")
             return
 
         now = time.monotonic()
         if now - self._last_solve_finished < self._cooldown_seconds:
+            logger.info("Solve request ignored: cooldown active")
             self._solve_lock.release()
             return
 
+        logger.info("Solve request accepted")
         threading.Thread(target=self.solve_process, daemon=True).start()
 
     def solve_process(self):
@@ -141,6 +233,7 @@ class ExamHelperApp:
             if answer in ['A', 'B', 'C', 'D', 'E']:
                 display = self._record_answer(answer)
                 self.root.after(0, self.update_ui, display, "#00ff00")
+                logger.info("Solve request completed with a valid answer")
             else:
                 # Failed requests do not change history or replace an answer
                 # the user is currently viewing.
@@ -149,6 +242,7 @@ class ExamHelperApp:
                     self.root.after(0, self.update_ui, "ANS: ERR", "#ff0000")
                 else:
                     self.root.after(0, self.update_ui, display, "#00ff00")
+                logger.warning("Solve request completed without a valid answer")
 
             # Blink LED
             if answer in ['A', 'B', 'C', 'D', 'E']:
@@ -158,12 +252,35 @@ class ExamHelperApp:
             # Auto-hide after 5 seconds only when this solve opened the overlay.
             if not was_visible:
                 self.root.after(5000, self.root.withdraw)
+        except Exception:
+            logger.exception("Unhandled solve-process error")
         finally:
             self._last_solve_finished = time.monotonic()
             self._solve_lock.release()
 
+    def on_exit(self):
+        if self._shutdown:
+            return
+        self._shutdown = True
+        logger.info("Application shutting down")
+        try:
+            self.listener.stop()
+        except Exception:
+            logger.exception("Error stopping global hotkey listener")
+        if self.tray_icon is not None:
+            try:
+                self.tray_icon.stop()
+            except Exception:
+                logger.exception("Error stopping system tray icon")
+        logger.info("Application shutdown complete")
+        self.root.destroy()
+
     def run(self):
-        self.root.mainloop()
+        try:
+            self.root.mainloop()
+        finally:
+            self.on_exit()
+
 
 if __name__ == "__main__":
     app = ExamHelperApp()

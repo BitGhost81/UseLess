@@ -22,13 +22,16 @@ This is a Windows desktop helper that captures the entire screen and sends it to
 1.  Ensure you have Python installed.
 2.  Install dependencies:
     ```bash
-    pip install pynput google-genai pillow python-dotenv
+    pip install pynput google-genai pillow python-dotenv pystray
     ```
 3.  Add your `GEMINI_API_KEY` to the `.env` file.
 4.  Run the application:
     ```bash
     python main.py
     ```
+    To run without a visible command prompt on Windows, use `pythonw main.py` instead.
+
+The application places a UseLess icon in the Windows system tray. Its menu provides `Show/Hide Overlay`, `View Logs`, and `Exit`. `View Logs` opens the recent entries from the rotating `logs/useless.log` file. The log records application lifecycle events, screenshot-capture timing, Gemini request start/end timestamps and duration, errors, and answer-history navigation; it does not record API keys, screenshots, or prompts.
 
 ## How to use
 
