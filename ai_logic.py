@@ -2,6 +2,7 @@ import base64
 import io
 import logging
 import os
+import re
 import time
 from datetime import datetime, timezone
 
@@ -105,6 +106,34 @@ def _image_data_url(screenshot):
     return f"data:image/png;base64,{encoded}"
 
 
+def _extract_groq_text(response):
+    """Extract text from the OpenAI-compatible message without logging contents."""
+    content = response.choices[0].message.content
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for part in content:
+            if isinstance(part, dict):
+                text = part.get("text")
+            else:
+                text = getattr(part, "text", None)
+            if text:
+                parts.append(text)
+        return "\n".join(parts)
+    return str(content)
+
+
+def _normalize_groq_answer(raw_answer):
+    """Prefer standalone final option tokens over letters inside explanations."""
+    text = raw_answer.strip().upper()
+    # Qwen reasoning responses may put the final answer after a </think> block.
+    if "</THINK>" in text:
+        text = text.rsplit("</THINK>", 1)[1]
+    matches = re.findall(r"(?<![A-Z])([A-E])(?![A-Z])", text)
+    return matches[-1] if matches else "ERR"
+
+
 def _generate_answer(gear_number, gear, screenshot):
     if gear["provider"] == "Google Gemini":
         response = _get_gemini_client().models.generate_content(
@@ -130,7 +159,13 @@ def _generate_answer(gear_number, gear, screenshot):
                 },
             ],
         )
-        return response.choices[0].message.content
+        raw_answer = _extract_groq_text(response)
+        logger.info(
+            "Groq response extracted: content_type=%s text_length=%s",
+            type(response.choices[0].message.content).__name__,
+            len(raw_answer),
+        )
+        return raw_answer
 
     raise ValueError(f"Unsupported gear: {gear_number}")
 
@@ -175,9 +210,13 @@ def get_ai_answer():
             request_duration,
         )
 
-        # Keep the existing response normalization and return behavior.
+        # Keep Gemini's existing normalization behavior; Qwen gets a
+        # standalone-token normalization because it may include reasoning text.
         phase = "response processing"
-        final_answer = raw_answer.strip().upper()
+        if gear["provider"] == "Groq":
+            final_answer = _normalize_groq_answer(raw_answer)
+        else:
+            final_answer = raw_answer.strip().upper()
         if final_answer in ['A', 'B', 'C', 'D', 'E']:
             return final_answer
         for char in final_answer:
