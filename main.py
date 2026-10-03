@@ -5,6 +5,7 @@ import time
 import ctypes
 import logging
 import platform
+from datetime import datetime, timezone
 
 from PIL import Image, ImageDraw
 from logging_utils import configure_logging, mark_session_end, read_recent_logs
@@ -17,7 +18,7 @@ except Exception:
     pystray = None
     logger.exception("System tray import failed; install pystray to enable the tray")
 
-from ai_logic import get_ai_answer, set_active_gear
+from ai_logic import get_active_gear, get_ai_answer, set_active_gear
 from led_control import blink_caps_lock
 
 # Windows-specific constants for non-focus-stealing window
@@ -26,6 +27,8 @@ WS_EX_NOACTIVATE = 0x08000000
 WS_EX_TOPMOST = 0x00000008
 SW_HIDE = 0
 SW_SHOW = 5
+REQUEST_TIMEOUT_SECONDS = 60
+VALID_ANSWERS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
 class ExamHelperApp:
     def __init__(self):
@@ -296,6 +299,50 @@ class ExamHelperApp:
         logger.info("Solve request accepted")
         threading.Thread(target=self.solve_process, daemon=True).start()
 
+    def _get_answer_with_timeout(self):
+        result = {}
+        completed = threading.Event()
+        request_started_at = datetime.now(timezone.utc)
+        gear_number, gear = get_active_gear()
+
+        def request_worker():
+            try:
+                result["answer"] = get_ai_answer()
+            except Exception:
+                logger.exception("Unexpected AI worker error")
+                result["answer"] = "ERR"
+            finally:
+                completed.set()
+
+        threading.Thread(
+            target=request_worker,
+            name="UseLessAIRequest",
+            daemon=True,
+        ).start()
+
+        if completed.wait(REQUEST_TIMEOUT_SECONDS):
+            return result.get("answer", "ERR"), False
+
+        timeout_at = datetime.now(timezone.utc)
+        logger.error(
+            "AI request timeout: gear=%s provider=%s model=%s timeout_seconds=%s request_start=%s timeout_time=%s",
+            gear_number,
+            gear["provider"],
+            gear["model"],
+            REQUEST_TIMEOUT_SECONDS,
+            request_started_at.isoformat(),
+            timeout_at.isoformat(),
+        )
+        self.root.after(0, self._show_timeout)
+        return None, True
+
+    def _show_timeout(self):
+        current = self._current_answer_display()
+        timeout_display = f"TIMEOUT ({REQUEST_TIMEOUT_SECONDS}s)"
+        if current is not None:
+            timeout_display = f"{timeout_display}\n{current}"
+        self.update_ui(timeout_display, "#ff0000")
+
     def solve_process(self):
         try:
             self.root.after(0, self.update_ui, "Analyzing...", "#ffff00")
@@ -303,11 +350,13 @@ class ExamHelperApp:
             if not was_visible:
                 self.root.after(0, self.root.deiconify)
 
-            # get_ai_answer performs exactly one synchronous Gemini request;
-            # no automatic retry is added here for quota or other API errors.
-            answer = get_ai_answer()
+            # The watchdog abandons only the application-level wait. A late
+            # worker result is kept local and cannot update UI or history.
+            answer, timed_out = self._get_answer_with_timeout()
+            if timed_out:
+                return
 
-            if answer in ['A', 'B', 'C', 'D', 'E']:
+            if answer in VALID_ANSWERS:
                 display = self._record_answer(answer)
                 self.root.after(0, self.update_ui, display, "#00ff00")
                 logger.info("Solve request completed with a valid answer")
@@ -322,7 +371,7 @@ class ExamHelperApp:
                 logger.warning("Solve request completed without a valid answer")
 
             # Blink LED
-            if answer in ['A', 'B', 'C', 'D', 'E']:
+            if answer in VALID_ANSWERS:
                 times = ord(answer) - ord('A') + 1
                 blink_caps_lock(times)
 

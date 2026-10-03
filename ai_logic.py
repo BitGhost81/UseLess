@@ -124,14 +124,19 @@ def _extract_groq_text(response):
     return str(content)
 
 
-def _normalize_groq_answer(raw_answer):
-    """Prefer standalone final option tokens over letters inside explanations."""
+def _normalize_option_answer(raw_answer, ignore_reasoning=False):
+    """Return the final standalone A-Z option token, never a word-internal letter."""
     text = raw_answer.strip().upper()
     # Qwen reasoning responses may put the final answer after a </think> block.
-    if "</THINK>" in text:
+    if ignore_reasoning and "</THINK>" in text:
         text = text.rsplit("</THINK>", 1)[1]
-    matches = re.findall(r"(?<![A-Z])([A-E])(?![A-Z])", text)
+    matches = re.findall(r"(?<![A-Z])([A-Z])(?![A-Z])", text)
     return matches[-1] if matches else "ERR"
+
+
+def _normalize_groq_answer(raw_answer):
+    """Backward-compatible wrapper for the Qwen-specific normalizer."""
+    return _normalize_option_answer(raw_answer, ignore_reasoning=True)
 
 
 def _generate_answer(gear_number, gear, screenshot):
@@ -210,18 +215,15 @@ def get_ai_answer():
             request_duration,
         )
 
-        # Keep Gemini's existing normalization behavior; Qwen gets a
-        # standalone-token normalization because it may include reasoning text.
+        # Both providers use standalone option tokens; Qwen additionally ignores
+        # its optional reasoning block.
         phase = "response processing"
-        if gear["provider"] == "Groq":
-            final_answer = _normalize_groq_answer(raw_answer)
-        else:
-            final_answer = raw_answer.strip().upper()
-        if final_answer in ['A', 'B', 'C', 'D', 'E']:
+        final_answer = _normalize_option_answer(
+            raw_answer,
+            ignore_reasoning=gear["provider"] == "Groq",
+        )
+        if final_answer in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
             return final_answer
-        for char in final_answer:
-            if char in ['A', 'B', 'C', 'D', 'E']:
-                return char
         return "ERR"
     except Exception as e:
         ended_at = datetime.now(timezone.utc)
