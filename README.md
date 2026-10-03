@@ -22,9 +22,14 @@ This is a Windows desktop helper that captures the entire screen and sends it to
 1.  Ensure you have Python installed.
 2.  Install dependencies:
     ```bash
-    pip install pynput google-genai pillow python-dotenv pystray
+    pip install pynput google-genai openai pillow python-dotenv pystray
     ```
 3.  Add your `GEMINI_API_KEY` to the `.env` file.
+    For Gear 3, also add `GROQ_API_KEY`:
+    ```env
+    GEMINI_API_KEY=your_gemini_key_here
+    GROQ_API_KEY=
+    ```
 4.  Run the application:
     ```bash
     python main.py
@@ -40,6 +45,18 @@ The application places a UseLess icon in the Windows system tray. Its menu provi
 3. Read the returned answer (`A`–`E`) in the overlay. A valid answer also blinks Caps Lock that many times.
 4. Use `Ctrl + Alt + Left` and `Ctrl + Alt + Right` to view previous or newer answers from the current session. The indicator shows the current position, for example `ANS: C (3/7)`.
 5. Press `Ctrl + Alt + O` to show or hide the overlay manually.
+
+### Manual AI gears
+
+The active gear is selected manually and remains active until changed. There is no automatic provider fallback or cycling.
+
+| Hotkey | Gear | Provider/model |
+|---|---|---|
+| `Ctrl + Alt + 1` | Gear 1 | Google Gemini / `gemini-2.5-flash` |
+| `Ctrl + Alt + 2` | Gear 2 | Google Gemini / `gemini-3.5-flash-lite` |
+| `Ctrl + Alt + 3` | Gear 3 | Groq / `qwen/qwen3.8-27b` |
+
+After selection, the overlay briefly shows the selected gear. The next `Ctrl + Alt + S` request goes directly to that gear. Errors do not switch gears automatically. Gear selection and provider/model request timing are written to the local log without API keys.
 
 Answer history is kept only in memory for the current run. Navigating it never calls Gemini. A new successful screenshot request is appended and becomes the latest answer. Previous/next navigation stops at the oldest/newest answer and does not wrap. Failed requests are not added to history; if an earlier answer exists, it remains displayed. The current implementation has no normal chat input, screenshot file upload, cancel action, retry button, conversation reset, or keyboard shortcut for cancellation. API and quota failures are shown as `ERR` only when there is no earlier answer; the application does not automatically retry them.
 

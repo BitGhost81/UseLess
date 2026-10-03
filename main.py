@@ -13,7 +13,7 @@ try:
 except ImportError:
     pystray = None
 
-from ai_logic import get_ai_answer
+from ai_logic import get_ai_answer, set_active_gear
 from led_control import blink_caps_lock
 from logging_utils import configure_logging, read_recent_logs
 
@@ -70,7 +70,10 @@ class ExamHelperApp:
             '<ctrl>+<alt>+s': self.on_solve,
             '<ctrl>+<alt>+o': self.toggle_overlay,
             '<ctrl>+<alt>+<left>': self.show_previous_answer,
-            '<ctrl>+<alt>+<right>': self.show_next_answer
+            '<ctrl>+<alt>+<right>': self.show_next_answer,
+            '<ctrl>+<alt>+1': lambda: self.select_gear(1),
+            '<ctrl>+<alt>+2': lambda: self.select_gear(2),
+            '<ctrl>+<alt>+3': lambda: self.select_gear(3),
         })
         self.listener.start()
         self._start_tray()
@@ -113,7 +116,7 @@ class ExamHelperApp:
         self.tray_thread = threading.Thread(
             target=self._run_tray,
             name="UseLessTray",
-            daemon=True,
+            daemon=False,
         )
         self.tray_thread.start()
         logger.info("System tray icon started")
@@ -156,6 +159,29 @@ class ExamHelperApp:
         text.insert("1.0", read_recent_logs())
         text.configure(state="disabled")
         text.see("end")
+
+    def select_gear(self, gear_number):
+        try:
+            selected_number, gear = set_active_gear(gear_number)
+        except ValueError:
+            logger.exception("Unable to select gear: %s", gear_number)
+            return
+
+        logger.info(
+            "Active gear changed: Gear %s - %s / %s",
+            selected_number,
+            gear["provider"],
+            gear["model"],
+        )
+        status = f"GEAR {selected_number}\n{gear['model']} / {gear['provider']}"
+        self.root.after(0, self.update_ui, status, "#00ccff")
+        self.root.after(1800, self.restore_normal_display)
+
+    def restore_normal_display(self):
+        if self._solve_lock.locked():
+            self.update_ui("Analyzing...", "#ffff00")
+            return
+        self.update_ui(self._current_answer_display() or "IDLE")
 
     def update_ui(self, text, color="#00ff00"):
         self.label.config(text=text, fg=color)
