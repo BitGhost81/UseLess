@@ -8,7 +8,7 @@ The documented entry point is `main.py`:
 2. `Ctrl + Alt + S` starts `ExamHelperApp.solve_process()` on a daemon thread.
 3. `solve_process()` updates the Tkinter overlay, then calls `ai_logic.get_ai_answer()`.
 4. `ai_logic.py` captures the entire screen with `PIL.ImageGrab.grab()`.
-5. The screenshot is sent once to a configured `google.generativeai.GenerativeModel` using `model.generate_content([screenshot])`.
+5. The screenshot is sent once through the `google.genai` client using `client.models.generate_content(...)`.
 6. The returned text is normalized and reduced to the first valid answer letter (`A`–`E`), or `ERR`.
 7. `main.py` displays the result and blinks Caps Lock once per answer-letter position.
 8. The overlay is hidden after five seconds when the solve action opened it.
@@ -115,7 +115,7 @@ Thus, one accepted `Ctrl + Alt + S` action produces at most one request in the d
 From the project directory on Windows:
 
 ```bash
-pip install pynput google-generativeai pillow python-dotenv
+pip install pynput google-genai pillow python-dotenv
 ```
 
 Create a `.env` file containing:

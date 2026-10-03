@@ -1,4 +1,5 @@
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import PIL.ImageGrab
 import os
 from dotenv import load_dotenv
@@ -6,7 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 API_KEY = os.getenv("GEMINI_API_KEY")
-genai.configure(api_key=API_KEY, transport='rest')
+client = None
 
 SYSTEM_INSTRUCTION = """
 You are a highly precise exam-solving assistant. 
@@ -20,19 +21,26 @@ Rules:
 5. Accuracy is critical. Double-check your reasoning before outputting the letter.
 """
 
-# Switching to 1.5 Flash as it has more stable free tier availability
-model = genai.GenerativeModel(
-    'gemini-2.5-flash', 
+MODEL_NAME = 'gemini-2.5-flash'
+REQUEST_CONFIG = types.GenerateContentConfig(
     system_instruction=SYSTEM_INSTRUCTION
 )
 
 def get_ai_answer():
+    global client
     try:
+        if client is None:
+            client = genai.Client(api_key=API_KEY)
+
         # Capture the entire screen
         screenshot = PIL.ImageGrab.grab()
         
         # Request Answer
-        response = model.generate_content([screenshot])
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=[screenshot],
+            config=REQUEST_CONFIG
+        )
         
         # Clean the output
         final_answer = response.text.strip().upper()

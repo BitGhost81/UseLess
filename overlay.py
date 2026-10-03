@@ -1,6 +1,7 @@
 import tkinter as tk
 import PIL.ImageGrab
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import os
 from dotenv import load_dotenv
 
@@ -14,24 +15,35 @@ load_dotenv()
 API_KEY = os.getenv("GEMINI_API_KEY")
 
 # Configure the AI
-genai.configure(api_key=API_KEY, transport='rest')
+client = None
 
 # Use the 2026 stable model ID
-model = genai.GenerativeModel('gemini-2.5-flash', system_instruction="You are a precise quiz solver. Look at the image and identify the multiple-choice question. Output ONLY the correct option letter (e.g., 'A', 'B', 'C', or 'D'). Do NOT provide any explanations, headers, or additional text.")
+MODEL_NAME = 'gemini-2.5-flash'
+REQUEST_CONFIG = types.GenerateContentConfig(
+    system_instruction="You are a precise quiz solver. Look at the image and identify the multiple-choice question. Output ONLY the correct option letter (e.g., 'A', 'B', 'C', or 'D'). Do NOT provide any explanations, headers, or additional text."
+)
 
 # ==========================================
 # AI LOGIC
 # ==========================================
 def get_ai_answer():
+    global client
     label.config(text="Thinking...")
     root.update()
     
     try:
+        if client is None:
+            client = genai.Client(api_key=API_KEY)
+
         # 1. Capture the entire screen
         screenshot = PIL.ImageGrab.grab()
         
         # 2. Request Answer (Empty prompt because the System Instruction handles the rules)
-        response = model.generate_content([screenshot])
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=[screenshot],
+            config=REQUEST_CONFIG
+        )
         
         # Clean the output just in case (removes extra spaces or periods)
         final_answer = response.text.strip().upper()

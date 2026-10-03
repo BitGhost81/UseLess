@@ -22,7 +22,7 @@ This is a Windows desktop helper that captures the entire screen and sends it to
 1.  Ensure you have Python installed.
 2.  Install dependencies:
     ```bash
-    pip install pynput google-generativeai pillow python-dotenv
+    pip install pynput google-genai pillow python-dotenv
     ```
 3.  Add your `GEMINI_API_KEY` to the `.env` file.
 4.  Run the application:
