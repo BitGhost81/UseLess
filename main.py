@@ -28,7 +28,7 @@ WS_EX_TOPMOST = 0x00000008
 SW_HIDE = 0
 SW_SHOW = 5
 REQUEST_TIMEOUT_SECONDS = 60
-VALID_ANSWERS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+VALID_ANSWERS = frozenset("ABCDEF")
 
 class ExamHelperApp:
     def __init__(self):

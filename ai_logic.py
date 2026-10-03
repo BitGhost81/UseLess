@@ -130,7 +130,7 @@ def _normalize_option_answer(raw_answer, ignore_reasoning=False):
     # Qwen reasoning responses may put the final answer after a </think> block.
     if ignore_reasoning and "</THINK>" in text:
         text = text.rsplit("</THINK>", 1)[1]
-    matches = re.findall(r"(?<![A-Z])([A-Z])(?![A-Z])", text)
+    matches = re.findall(r"(?<![A-Z])([A-F])(?![A-Z])", text)
     return matches[-1] if matches else "ERR"
 
 
@@ -222,7 +222,7 @@ def get_ai_answer():
             raw_answer,
             ignore_reasoning=gear["provider"] == "Groq",
         )
-        if final_answer in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+        if final_answer in "ABCDEF":
             return final_answer
         return "ERR"
     except Exception as e:

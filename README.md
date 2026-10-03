@@ -48,7 +48,7 @@ The application places a UseLess icon in the Windows system tray. Its menu provi
 
 1. Open the question or other content to analyze.
 2. Press `Ctrl + Alt + S`. The overlay shows `Analyzing...` while the single Gemini request is running.
-3. Read the returned answer (`A`–`Z`) in the overlay. A valid answer also blinks Caps Lock that many times.
+3. Read the returned answer (`A`–`F`) in the overlay. A valid answer also blinks Caps Lock that many times.
 4. Use `Ctrl + Alt + Left` and `Ctrl + Alt + Right` to view previous or newer answers from the current session. The indicator shows the current position, for example `ANS: C (3/7)`.
 5. Press `Ctrl + Alt + O` to show or hide the overlay manually.
 
