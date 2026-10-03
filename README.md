@@ -35,9 +35,10 @@ This is a Windows desktop helper that captures the entire screen and sends it to
 1. Open the question or other content to analyze.
 2. Press `Ctrl + Alt + S`. The overlay shows `Analyzing...` while the single Gemini request is running.
 3. Read the returned answer (`A`–`E`) in the overlay. A valid answer also blinks Caps Lock that many times.
-4. Press `Ctrl + Alt + O` to show or hide the overlay manually.
+4. Use `Ctrl + Alt + Left` and `Ctrl + Alt + Right` to view previous or newer answers from the current session. The indicator shows the current position, for example `ANS: C (3/7)`.
+5. Press `Ctrl + Alt + O` to show or hide the overlay manually.
 
-The current implementation has no normal chat input, screenshot file upload, cancel action, retry button, conversation reset, or keyboard shortcut for cancellation. API and quota failures are shown as `ERR`; the application does not automatically retry them.
+Answer history is kept only in memory for the current run. Navigating it never calls Gemini. A new successful screenshot request is appended and becomes the latest answer. Previous/next navigation stops at the oldest/newest answer and does not wrap. Failed requests are not added to history; if an earlier answer exists, it remains displayed. The current implementation has no normal chat input, screenshot file upload, cancel action, retry button, conversation reset, or keyboard shortcut for cancellation. API and quota failures are shown as `ERR` only when there is no earlier answer; the application does not automatically retry them.
 
 Only `main.py` is the documented entry point. `overlay.py` is an older standalone GUI that contains a second Gemini integration; running it separately would create its own API requests and should not be used alongside `main.py`.
 

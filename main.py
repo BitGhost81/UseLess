@@ -41,12 +41,18 @@ class ExamHelperApp:
         self._solve_lock = threading.Lock()
         self._cooldown_seconds = 0.5
         self._last_solve_finished = 0.0
+        # Answers are session-only and are never sent back to Gemini.
+        self._history_lock = threading.Lock()
+        self._answer_history = []
+        self._history_index = -1
         self.setup_windows_attributes()
         
         # Start hotkey listener
         self.listener = keyboard.GlobalHotKeys({
             '<ctrl>+<alt>+s': self.on_solve,
-            '<ctrl>+<alt>+o': self.toggle_overlay
+            '<ctrl>+<alt>+o': self.toggle_overlay,
+            '<ctrl>+<alt>+left': self.show_previous_answer,
+            '<ctrl>+<alt>+right': self.show_next_answer
         })
         self.listener.start()
 
@@ -66,6 +72,46 @@ class ExamHelperApp:
 
     def update_ui(self, text, color="#00ff00"):
         self.label.config(text=text, fg=color)
+
+    def _current_answer_display(self):
+        with self._history_lock:
+            if not self._answer_history:
+                return None
+            answer = self._answer_history[self._history_index]
+            position = self._history_index + 1
+            total = len(self._answer_history)
+        return f"ANS: {answer} ({position}/{total})"
+
+    def _record_answer(self, answer):
+        with self._history_lock:
+            self._answer_history.append(answer)
+            self._history_index = len(self._answer_history) - 1
+            position = self._history_index + 1
+            total = len(self._answer_history)
+        return f"ANS: {answer} ({position}/{total})"
+
+    def _navigate_history(self, step):
+        with self._history_lock:
+            if not self._answer_history:
+                return None
+            new_index = self._history_index + step
+            if new_index < 0 or new_index >= len(self._answer_history):
+                return None
+            self._history_index = new_index
+            answer = self._answer_history[self._history_index]
+            position = self._history_index + 1
+            total = len(self._answer_history)
+        return f"ANS: {answer} ({position}/{total})"
+
+    def show_previous_answer(self):
+        display = self._navigate_history(-1)
+        if display is not None:
+            self.root.after(0, self.update_ui, display, "#00ff00")
+
+    def show_next_answer(self):
+        display = self._navigate_history(1)
+        if display is not None:
+            self.root.after(0, self.update_ui, display, "#00ff00")
 
     def on_solve(self):
         # GlobalHotKeys can invoke this callback repeatedly while a request is
@@ -92,8 +138,17 @@ class ExamHelperApp:
             # no automatic retry is added here for quota or other API errors.
             answer = get_ai_answer()
 
-            color = "#00ff00" if answer != "ERR" else "#ff0000"
-            self.root.after(0, self.update_ui, f"ANS: {answer}", color)
+            if answer in ['A', 'B', 'C', 'D', 'E']:
+                display = self._record_answer(answer)
+                self.root.after(0, self.update_ui, display, "#00ff00")
+            else:
+                # Failed requests do not change history or replace an answer
+                # the user is currently viewing.
+                display = self._current_answer_display()
+                if display is None:
+                    self.root.after(0, self.update_ui, "ANS: ERR", "#ff0000")
+                else:
+                    self.root.after(0, self.update_ui, display, "#00ff00")
 
             # Blink LED
             if answer in ['A', 'B', 'C', 'D', 'E']:
@@ -103,8 +158,6 @@ class ExamHelperApp:
             # Auto-hide after 5 seconds only when this solve opened the overlay.
             if not was_visible:
                 self.root.after(5000, self.root.withdraw)
-            else:
-                self.root.after(5000, self.update_ui, "IDLE")
         finally:
             self._last_solve_finished = time.monotonic()
             self._solve_lock.release()
