@@ -22,10 +22,10 @@ This is a Windows desktop helper that captures the entire screen and sends it to
 1.  Ensure you have Python installed.
 2.  Install dependencies:
     ```bash
-    pip install pynput google-genai openai pillow python-dotenv pystray
+    pip install -r requirements.txt
     ```
 3.  Add your `GEMINI_API_KEY` to the `.env` file.
-    For Gear 3, also add `GROQ_API_KEY`:
+    For Gear 5, also add `GROQ_API_KEY`:
     ```env
     GEMINI_API_KEY=your_gemini_key_here
     GROQ_API_KEY=
@@ -53,8 +53,10 @@ The active gear is selected manually and remains active until changed. There is 
 | Hotkey | Gear | Provider/model |
 |---|---|---|
 | `Ctrl + Alt + 1` | Gear 1 | Google Gemini / `gemini-2.5-flash` |
-| `Ctrl + Alt + 2` | Gear 2 | Google Gemini / `gemini-3.5-flash-lite` |
-| `Ctrl + Alt + 3` | Gear 3 | Groq / `qwen/qwen3.8-27b` |
+| `Ctrl + Alt + 2` | Gear 2 | Google Gemini / `gemini-2.5-flash-lite` |
+| `Ctrl + Alt + 3` | Gear 3 | Google Gemini / `gemini-3.5-flash` |
+| `Ctrl + Alt + 4` | Gear 4 | Google Gemini / `gemini-3.5-flash-lite` |
+| `Ctrl + Alt + 5` | Gear 5 | Groq / `qwen/qwen3.8-27b` |
 
 After selection, the overlay briefly shows the selected gear. The next `Ctrl + Alt + S` request goes directly to that gear. Errors do not switch gears automatically. Gear selection and provider/model request timing are written to the local log without API keys.
 

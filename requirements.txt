@@ -1,0 +1,6 @@
+pynput
+google-genai
+openai
+Pillow
+python-dotenv
+pystray

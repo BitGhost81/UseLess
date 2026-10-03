@@ -35,10 +35,20 @@ GEARS = {
     },
     2: {
         "provider": "Google Gemini",
-        "model": "gemini-3.5-flash-lite",
+        "model": "gemini-2.5-flash-lite",
         "api_key": "GEMINI_API_KEY",
     },
     3: {
+        "provider": "Google Gemini",
+        "model": "gemini-3.5-flash",
+        "api_key": "GEMINI_API_KEY",
+    },
+    4: {
+        "provider": "Google Gemini",
+        "model": "gemini-3.5-flash-lite",
+        "api_key": "GEMINI_API_KEY",
+    },
+    5: {
         "provider": "Groq",
         "model": "qwen/qwen3.8-27b",
         "api_key": "GROQ_API_KEY",
@@ -96,7 +106,7 @@ def _image_data_url(screenshot):
 
 
 def _generate_answer(gear_number, gear, screenshot):
-    if gear_number in (1, 2):
+    if gear["provider"] == "Google Gemini":
         response = _get_gemini_client().models.generate_content(
             model=gear["model"],
             contents=[screenshot],
@@ -104,7 +114,7 @@ def _generate_answer(gear_number, gear, screenshot):
         )
         return response.text
 
-    if gear_number == 3:
+    if gear["provider"] == "Groq":
         response = _get_groq_client().chat.completions.create(
             model=gear["model"],
             messages=[

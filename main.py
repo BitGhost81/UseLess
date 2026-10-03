@@ -7,23 +7,23 @@ import logging
 import platform
 
 from PIL import Image, ImageDraw
+from logging_utils import configure_logging, read_recent_logs
+
+logger = configure_logging()
 
 try:
     import pystray
-except ImportError:
+except Exception:
     pystray = None
+    logger.exception("System tray import failed; install pystray to enable the tray")
 
 from ai_logic import get_ai_answer, set_active_gear
 from led_control import blink_caps_lock
-from logging_utils import configure_logging, read_recent_logs
 
 # Windows-specific constants for non-focus-stealing window
 GWL_EXSTYLE = -20
 WS_EX_NOACTIVATE = 0x08000000
 WS_EX_TOPMOST = 0x00000008
-
-logger = configure_logging()
-
 
 class ExamHelperApp:
     def __init__(self):
@@ -74,6 +74,8 @@ class ExamHelperApp:
             '<ctrl>+<alt>+1': lambda: self.select_gear(1),
             '<ctrl>+<alt>+2': lambda: self.select_gear(2),
             '<ctrl>+<alt>+3': lambda: self.select_gear(3),
+            '<ctrl>+<alt>+4': lambda: self.select_gear(4),
+            '<ctrl>+<alt>+5': lambda: self.select_gear(5),
         })
         self.listener.start()
         self._start_tray()
@@ -91,35 +93,44 @@ class ExamHelperApp:
             )
 
     def _make_tray_image(self):
-        image = Image.new("RGB", (64, 64), "#1e1e1e")
-        draw = ImageDraw.Draw(image)
-        draw.ellipse((8, 8, 56, 56), fill="#00aa66", outline="#00ff00", width=3)
-        draw.text((25, 19), "U", fill="white")
-        return image
+        try:
+            image = Image.new("RGBA", (64, 64), (30, 30, 30, 255))
+            draw = ImageDraw.Draw(image)
+            draw.ellipse((8, 8, 56, 56), fill=(0, 170, 102, 255), outline=(0, 255, 0, 255), width=3)
+            draw.text((25, 19), "U", fill=(255, 255, 255, 255))
+            return image
+        except Exception:
+            logger.exception("Generated tray icon failed; using fallback icon")
+            return Image.new("RGBA", (32, 32), (0, 170, 102, 255))
 
     def _start_tray(self):
         if pystray is None:
-            logger.warning("System tray unavailable: install pystray on Windows")
+            logger.error("System tray unavailable because pystray could not be imported")
             return
 
-        menu = pystray.Menu(
-            pystray.MenuItem("Show/Hide Overlay", self._tray_toggle_overlay),
-            pystray.MenuItem("View Logs", self._tray_view_logs),
-            pystray.MenuItem("Exit", self._tray_exit),
-        )
-        self.tray_icon = pystray.Icon(
-            "useless",
-            self._make_tray_image(),
-            "UseLess",
-            menu,
-        )
-        self.tray_thread = threading.Thread(
-            target=self._run_tray,
-            name="UseLessTray",
-            daemon=False,
-        )
-        self.tray_thread.start()
-        logger.info("System tray icon started")
+        try:
+            menu = pystray.Menu(
+                pystray.MenuItem("Show/Hide Overlay", self._tray_toggle_overlay),
+                pystray.MenuItem("View Logs", self._tray_view_logs),
+                pystray.MenuItem("Exit", self._tray_exit),
+            )
+            self.tray_icon = pystray.Icon(
+                "useless",
+                self._make_tray_image(),
+                "UseLess",
+                menu,
+            )
+            self.tray_thread = threading.Thread(
+                target=self._run_tray,
+                name="UseLessTray",
+                daemon=False,
+            )
+            self.tray_thread.start()
+            logger.info("System tray icon started")
+        except Exception:
+            self.tray_icon = None
+            self.tray_thread = None
+            logger.exception("System tray initialization failed")
 
     def _run_tray(self):
         try:
