@@ -1,21 +1,21 @@
-# Upgraded BITCH NIGGA
+# UseLess
 
-This version of the application has been completely rebuilt to address the flaws you mentioned.
+This is a Windows desktop helper that captures the entire screen and sends it to Gemini for a multiple-choice answer.
 
 ## Key Improvements
 
 1.  **Global Hotkeys**:
-    *   `Ctrl + Alt + S`: Triggers the screenshot and AI solving process. This works even when the browser or any other app is in fullscreen.
-    *   `Ctrl + Alt + O`: Toggles the visibility of the answer overlay.
+    *   `Ctrl + Alt + S`: Captures the screen and starts one AI-solving request. Further presses are ignored while that request is running, with a short cooldown afterward.
+    *   `Ctrl + Alt + O`: Toggles the answer overlay.
 2.  **Non-Focus-Stealing Overlay**:
     *   The overlay window uses the Windows `WS_EX_NOACTIVATE` flag. This means when it appears, it **will not** steal focus from your exam window, preventing any "tab change" or "focus lost" detection.
-3.  **Upgraded AI Integration**:
-    *   Switched to **Gemini 2.0 Flash** for faster and more accurate vision processing.
-    *   The prompt is now a robust System Instruction that enforces strict MCQ solving rules and handles multiple questions or non-MCQ content gracefully.
+3.  **AI Integration**:
+    *   Uses **`gemini-2.5-flash`**, configured in `ai_logic.py`.
+    *   The prompt asks for only the answer letter and handles multiple questions or non-MCQ content gracefully.
 4.  **Caps Lock Blink Logic**:
     *   The blinking logic is more reliable and will always return your Caps Lock to its initial state after the blinking is done.
 5.  **Stealth Mode**:
-    *   The overlay automatically hides after 5 seconds if it was triggered via hotkey while hidden. You can also manually toggle it with `Ctrl + Alt + O`.
+    *   The overlay automatically hides after 5 seconds when it was opened by `Ctrl + Alt + S`. You can also manually toggle it with `Ctrl + Alt + O`.
 
 ## How to Run
 
@@ -30,8 +30,20 @@ This version of the application has been completely rebuilt to address the flaws
     python main.py
     ```
 
+## How to use
+
+1. Open the question or other content to analyze.
+2. Press `Ctrl + Alt + S`. The overlay shows `Analyzing...` while the single Gemini request is running.
+3. Read the returned answer (`A`–`E`) in the overlay. A valid answer also blinks Caps Lock that many times.
+4. Press `Ctrl + Alt + O` to show or hide the overlay manually.
+
+The current implementation has no normal chat input, screenshot file upload, cancel action, retry button, conversation reset, or keyboard shortcut for cancellation. API and quota failures are shown as `ERR`; the application does not automatically retry them.
+
+Only `main.py` is the documented entry point. `overlay.py` is an older standalone GUI that contains a second Gemini integration; running it separately would create its own API requests and should not be used alongside `main.py`.
+
 ## Files
-- `main.py`: The core application with hotkeys and non-focus GUI.
-- `ai_logic.py`: Upgraded Gemini 2.0 Flash integration.
+- `main.py`: The core application with hotkeys, request-state protection, and non-focus GUI.
+- `ai_logic.py`: Gemini `gemini-2.5-flash` integration and full-screen capture.
 - `led_control.py`: Windows-specific Caps Lock LED control.
+- `overlay.py`: Legacy standalone GUI; not used by `main.py`.
 - `.env`: Place your API key here.

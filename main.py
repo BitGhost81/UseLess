@@ -37,6 +37,10 @@ class ExamHelperApp:
         self.root.withdraw()
         
         self.is_visible = False
+        # Prevent repeated hotkey presses from starting overlapping API calls.
+        self._solve_lock = threading.Lock()
+        self._cooldown_seconds = 0.5
+        self._last_solve_finished = 0.0
         self.setup_windows_attributes()
         
         # Start hotkey listener
@@ -64,29 +68,46 @@ class ExamHelperApp:
         self.label.config(text=text, fg=color)
 
     def on_solve(self):
+        # GlobalHotKeys can invoke this callback repeatedly while a request is
+        # still running. Acquire before starting the worker so only one
+        # screenshot submission can be in flight at a time.
+        if not self._solve_lock.acquire(blocking=False):
+            return
+
+        now = time.monotonic()
+        if now - self._last_solve_finished < self._cooldown_seconds:
+            self._solve_lock.release()
+            return
+
         threading.Thread(target=self.solve_process, daemon=True).start()
 
     def solve_process(self):
-        self.root.after(0, self.update_ui, "...", "#ffff00")
-        if not self.is_visible:
-            self.root.after(0, self.root.deiconify)
-        
-        answer = get_ai_answer()
-        
-        color = "#00ff00" if answer != "ERR" else "#ff0000"
-        self.root.after(0, self.update_ui, f"ANS: {answer}", color)
-        
-        # Blink LED
-        if answer in ['A', 'B', 'C', 'D', 'E']:
-            times = ord(answer) - ord('A') + 1
-            blink_caps_lock(times)
-        
-        # Auto-hide after 5 seconds if it was hidden before
-        time.sleep(5)
-        if not self.is_visible:
-            self.root.after(0, self.root.withdraw)
-        else:
-            self.root.after(0, self.update_ui, "IDLE")
+        try:
+            self.root.after(0, self.update_ui, "Analyzing...", "#ffff00")
+            was_visible = self.is_visible
+            if not was_visible:
+                self.root.after(0, self.root.deiconify)
+
+            # get_ai_answer performs exactly one synchronous Gemini request;
+            # no automatic retry is added here for quota or other API errors.
+            answer = get_ai_answer()
+
+            color = "#00ff00" if answer != "ERR" else "#ff0000"
+            self.root.after(0, self.update_ui, f"ANS: {answer}", color)
+
+            # Blink LED
+            if answer in ['A', 'B', 'C', 'D', 'E']:
+                times = ord(answer) - ord('A') + 1
+                blink_caps_lock(times)
+
+            # Auto-hide after 5 seconds only when this solve opened the overlay.
+            if not was_visible:
+                self.root.after(5000, self.root.withdraw)
+            else:
+                self.root.after(5000, self.update_ui, "IDLE")
+        finally:
+            self._last_solve_finished = time.monotonic()
+            self._solve_lock.release()
 
     def run(self):
         self.root.mainloop()
