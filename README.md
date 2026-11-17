@@ -8,7 +8,7 @@ This is a Windows desktop helper that captures the entire screen and sends it to
     *   `Ctrl + Alt + S`: Captures the screen and starts one AI-solving request. Further presses are ignored while that request is running, with a short cooldown afterward.
     *   `Ctrl + Alt + O`: Toggles the answer overlay.
 2.  **Non-Focus-Stealing Overlay**:
-    *   The overlay window uses the Windows `WS_EX_NOACTIVATE` flag. This means when it appears, it **will not** steal focus from your exam window, preventing any "tab change" or "focus lost" detection.
+    *   The overlay window uses the Windows `WS_EX_NOACTIVATE` flag. This means when it appears, it **will not** steal focus from your current window, preventing any "tab change" or "focus lost" detection.
 3.  **AI Integration**:
     *   Uses **`gemini-2.5-flash`**, configured in `ai_logic.py`.
     *   The prompt asks for only the answer letter and handles multiple questions or non-MCQ content gracefully.
@@ -42,6 +42,10 @@ This is a Windows desktop helper that captures the entire screen and sends it to
     ```
     `pythonw main.py` remains the cleanest way to launch without a console.
 
+### Offline tests
+
+Run `python -m unittest discover -s tests -v` to exercise simulated provider success/quota responses, screenshot-to-answer history, the 400-entry cap, and overlay positioning. These tests use fake screenshots and mocked provider functions; they do not submit requests to Gemini or Groq.
+
 The application places a UseLess icon in the Windows system tray. Its menu provides `Show/Hide Overlay`, `Show/Hide Console`, `View Logs`, and `Exit`. `View Logs` opens the current session from `logs/useless.log`. At startup, the previous current log is archived as a timestamped `logs/useless_*.log` file; the ten most recent archived sessions are retained. The current log is also protected by the existing size-based rotation. Logs do not record API keys, screenshots, prompts, or image contents.
 
 ## How to use
@@ -49,7 +53,7 @@ The application places a UseLess icon in the Windows system tray. Its menu provi
 1. Open the question or other content to analyze.
 2. Press `Ctrl + Alt + S`. The overlay shows `Analyzing...` while the single Gemini request is running.
 3. Read the returned answer (`A`–`F`) in the overlay. A valid answer also blinks Caps Lock that many times.
-4. Use `Ctrl + Alt + Left` and `Ctrl + Alt + Right` to view previous or newer answers from the current session. The indicator shows the current position, for example `ANS: C (3/7)`.
+4. Use `Ctrl + Alt + Left` and `Ctrl + Alt + Right` to view previous or newer answers from the current session. The indicator shows the current position, for example `ANS: C (3/7)`. Click the small `▾` button at the right of the overlay to open the screenshot associated with the currently selected answer.
 5. Press `Ctrl + Alt + O` to show or hide the overlay manually.
 
 ### Manual AI gears
@@ -66,7 +70,7 @@ The active gear is selected manually and remains active until changed. There is 
 
 After selection, the overlay briefly shows the selected gear. The next `Ctrl + Alt + S` request goes directly to that gear. Errors do not switch gears automatically. Gear selection and provider/model request timing are written to the local log without API keys.
 
-Answer history is kept only in memory for the current run. Navigating it never calls Gemini. A new successful screenshot request is appended and becomes the latest answer. Previous/next navigation stops at the oldest/newest answer and does not wrap. Failed requests are not added to history; if an earlier answer exists, it remains displayed. The current implementation has no normal chat input, screenshot file upload, cancel action, retry button, conversation reset, or keyboard shortcut for cancellation. API and quota failures are shown as `ERR` only when there is no earlier answer; the application does not automatically retry them.
+Answer history is session-only and holds up to 400 successful answers. Each entry links its answer to a locally compressed screenshot preview stored in a temporary folder; these files are removed when the application exits. Navigating history never calls an AI provider, and the screenshot button follows the selected history entry. Previous/next navigation stops at the oldest/newest answer and does not wrap. Failed requests are not added to history and are shown as clear status messages (including quota/rate-limit, API-key, unavailable-model, network/service, timeout, capture, and unreadable-response cases), rather than leaving a previous answer looking like the latest result. The app does not automatically retry errors or switch gears. It has no normal chat input, screenshot file upload, cancel action, retry button, conversation reset, or keyboard shortcut for cancellation.
 
 Only `main.py` is the documented entry point. `overlay.py` is an older standalone GUI that contains a second Gemini integration; running it separately would create its own API requests and should not be used alongside `main.py`.
 

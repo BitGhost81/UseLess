@@ -175,12 +175,36 @@ def _generate_answer(gear_number, gear, screenshot):
     raise ValueError(f"Unsupported gear: {gear_number}")
 
 
-def get_ai_answer():
+def _friendly_error(error, phase):
+    """Map common capture, configuration, quota, auth, network and API errors to safe UI text."""
+    message = str(error).lower()
+    status = getattr(error, "status_code", None) or getattr(error, "code", None)
+    status_text = str(status).lower()
+    if phase == "screenshot capture":
+        return "SCREEN CAPTURE FAILED\nCheck display permissions and try again."
+    if "api_key" in message or "api key" in message or "unauthorized" in message or "forbidden" in message or "401" in status_text or "403" in status_text:
+        return "API KEY ERROR\nCheck the selected gear's key in .env."
+    if any(token in message for token in ("quota", "rate limit", "rate_limit", "resource_exhausted", "too many requests", "429")) or "429" in status_text:
+        return "LIMIT REACHED\nProvider quota/rate limit reached. Try later or select another gear."
+    if any(token in message for token in ("not found", "not supported", "model")) and ("404" in message or "model" in message):
+        return "MODEL UNAVAILABLE\nCheck this gear's model/provider availability."
+    if any(token in message for token in ("timeout", "timed out", "deadline")):
+        return "PROVIDER TIMEOUT\nTry again when the service is responsive."
+    if any(token in message for token in ("connection", "network", "dns", "unavailable", "temporarily")):
+        return "NETWORK/SERVICE ERROR\nCheck your connection and try again."
+    if phase == "response processing":
+        return "UNREADABLE RESPONSE\nNo option A–F was returned; try again."
+    return "AI REQUEST FAILED\nCheck the selected gear and local logs."
+
+
+def get_ai_answer_with_details():
     gear_number, gear = get_active_gear()
     phase = "client initialization"
     request_started_at = None
     request_started_monotonic = None
     try:
+        if not os.getenv(gear["api_key"]):
+            return "ERR", f"MISSING API KEY\nSet {gear['api_key']} in .env for this gear.", None
         # Capture the entire screen exactly as before.
         phase = "screenshot capture"
         capture_started = time.monotonic()
@@ -223,8 +247,8 @@ def get_ai_answer():
             ignore_reasoning=gear["provider"] == "Groq",
         )
         if final_answer in "ABCDEF":
-            return final_answer
-        return "ERR"
+            return final_answer, None, screenshot
+        return "ERR", _friendly_error(ValueError("No option A-F found"), phase), screenshot
     except Exception as e:
         ended_at = datetime.now(timezone.utc)
         duration = (
@@ -242,5 +266,10 @@ def get_ai_answer():
             ended_at.isoformat(),
             f"{duration:.3f}" if duration is not None else "n/a",
         )
-        print(f"AI Error: {e}")
-        return "ERR"
+        return "ERR", _friendly_error(e, phase), locals().get("screenshot")
+
+
+def get_ai_answer():
+    """Backward-compatible answer-only interface."""
+    answer, _error, _screenshot = get_ai_answer_with_details()
+    return answer

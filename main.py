@@ -5,9 +5,11 @@ import time
 import ctypes
 import logging
 import platform
+import tempfile
+from pathlib import Path
 from datetime import datetime, timezone
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageTk
 from logging_utils import configure_logging, mark_session_end, read_recent_logs
 
 logger = configure_logging()
@@ -18,7 +20,7 @@ except Exception:
     pystray = None
     logger.exception("System tray import failed; install pystray to enable the tray")
 
-from ai_logic import get_active_gear, get_ai_answer, set_active_gear
+from ai_logic import get_active_gear, get_ai_answer_with_details, set_active_gear
 from led_control import blink_caps_lock
 
 # Windows-specific constants for non-focus-stealing window
@@ -28,13 +30,20 @@ WS_EX_TOPMOST = 0x00000008
 SW_HIDE = 0
 SW_SHOW = 5
 REQUEST_TIMEOUT_SECONDS = 60
+MAX_HISTORY_ITEMS = 400
 VALID_ANSWERS = frozenset("ABCDEF")
+
+
+def top_right_geometry(screen_width, overlay_width=280, overlay_height=110, margin=24):
+    x_position = max(0, screen_width - overlay_width - margin)
+    return f"{overlay_width}x{overlay_height}+{x_position}+{margin}"
+
 
 class ExamHelperApp:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Helper")
-        self.root.geometry("200x100+50+50")
+        self.root.geometry(top_right_geometry(self.root.winfo_screenwidth()))
         self.root.attributes("-topmost", True)
         self.root.overrideredirect(True)
         self.root.attributes("-alpha", 0.9)
@@ -48,9 +57,18 @@ class ExamHelperApp:
             text="IDLE",
             fg="#00ff00",
             bg="#1e1e1e",
-            font=("Consolas", 14, "bold")
+            font=("Consolas", 14, "bold"),
+            wraplength=210,
+            justify="center",
         )
-        self.label.pack(expand=True)
+        self.label.pack(side="left", expand=True, fill="both", padx=(8, 0))
+        self.show_screenshot_button = tk.Button(
+            self.frame, text="▾", command=self.show_current_screenshot,
+            fg="#eeeeee", bg="#333333", activebackground="#555555",
+            relief="flat", font=("Segoe UI Symbol", 13, "bold"),
+            takefocus=False, cursor="hand2", state="disabled",
+        )
+        self.show_screenshot_button.pack(side="right", padx=6)
 
         # Initially hide the window
         self.root.withdraw()
@@ -70,6 +88,8 @@ class ExamHelperApp:
         self._history_lock = threading.Lock()
         self._answer_history = []
         self._history_index = -1
+        self._screenshot_dir = tempfile.TemporaryDirectory(prefix="useless-session-")
+        self._screenshot_counter = 0
         self.setup_windows_attributes()
         self.hide_console_on_windows()
 
@@ -240,18 +260,75 @@ class ExamHelperApp:
     def update_ui(self, text, color="#00ff00"):
         self.label.config(text=text, fg=color)
 
+    def _save_screenshot_preview(self, screenshot):
+        if screenshot is None:
+            return None
+        try:
+            preview = screenshot.copy()
+            preview.thumbnail((1600, 1200), Image.Resampling.LANCZOS)
+            self._screenshot_counter += 1
+            path = Path(self._screenshot_dir.name) / f"question_{self._screenshot_counter:04d}.jpg"
+            preview.convert("RGB").save(path, format="JPEG", quality=82, optimize=True)
+            return str(path)
+        except Exception:
+            logger.exception("Unable to save local screenshot preview")
+            return None
+
+    def show_current_screenshot(self):
+        with self._history_lock:
+            if not self._answer_history or self._history_index < 0:
+                return
+            entry = self._answer_history[self._history_index]
+            position, total = self._history_index + 1, len(self._answer_history)
+        image_path = entry.get("screenshot")
+        if not image_path or not Path(image_path).is_file():
+            self.update_ui("SCREENSHOT UNAVAILABLE", "#ff9900")
+            return
+        try:
+            with Image.open(image_path) as source_image:
+                image = source_image.copy()
+            image.thumbnail((1200, 900), Image.Resampling.LANCZOS)
+            window = tk.Toplevel(self.root)
+            window.title(f"Question screenshot — {entry['answer']} ({position}/{total})")
+            window.attributes("-topmost", True)
+            photo = ImageTk.PhotoImage(image)
+            display = tk.Label(window, image=photo, bg="#111111")
+            display.image = photo
+            display.pack()
+            close_button = tk.Button(
+                window,
+                text="Close screenshot",
+                command=window.destroy,
+                takefocus=True,
+                padx=12,
+                pady=4,
+            )
+            close_button.pack(pady=6)
+            window.bind("<Escape>", lambda _event: window.destroy())
+            window.geometry(f"{image.width}x{image.height + 48}")
+        except Exception:
+            logger.exception("Unable to display screenshot preview")
+            self.update_ui("SCREENSHOT VIEW FAILED", "#ff9900")
+
     def _current_answer_display(self):
         with self._history_lock:
             if not self._answer_history:
                 return None
-            answer = self._answer_history[self._history_index]
+            answer = self._answer_history[self._history_index]["answer"]
             position = self._history_index + 1
             total = len(self._answer_history)
         return f"ANS: {answer} ({position}/{total})"
 
-    def _record_answer(self, answer):
+    def _record_answer(self, answer, screenshot_path=None):
         with self._history_lock:
-            self._answer_history.append(answer)
+            self._answer_history.append({"answer": answer, "screenshot": screenshot_path})
+            if len(self._answer_history) > MAX_HISTORY_ITEMS:
+                evicted = self._answer_history.pop(0)
+                if evicted.get("screenshot"):
+                    try:
+                        Path(evicted["screenshot"]).unlink(missing_ok=True)
+                    except OSError:
+                        logger.exception("Unable to remove expired screenshot preview")
             self._history_index = len(self._answer_history) - 1
             position = self._history_index + 1
             total = len(self._answer_history)
@@ -265,7 +342,7 @@ class ExamHelperApp:
             if new_index < 0 or new_index >= len(self._answer_history):
                 return None
             self._history_index = new_index
-            answer = self._answer_history[self._history_index]
+            answer = self._answer_history[self._history_index]["answer"]
             position = self._history_index + 1
             total = len(self._answer_history)
         return f"ANS: {answer} ({position}/{total})"
@@ -307,10 +384,11 @@ class ExamHelperApp:
 
         def request_worker():
             try:
-                result["answer"] = get_ai_answer()
+                result["answer"], result["error"], result["screenshot"] = get_ai_answer_with_details()
             except Exception:
                 logger.exception("Unexpected AI worker error")
                 result["answer"] = "ERR"
+                result["error"] = "AI REQUEST FAILED\nCheck the selected gear and local logs."
             finally:
                 completed.set()
 
@@ -321,7 +399,7 @@ class ExamHelperApp:
         ).start()
 
         if completed.wait(REQUEST_TIMEOUT_SECONDS):
-            return result.get("answer", "ERR"), False
+            return result.get("answer", "ERR"), result.get("error"), result.get("screenshot"), False
 
         timeout_at = datetime.now(timezone.utc)
         logger.error(
@@ -334,7 +412,7 @@ class ExamHelperApp:
             timeout_at.isoformat(),
         )
         self.root.after(0, self._show_timeout)
-        return None, True
+        return None, None, None, True
 
     def _show_timeout(self):
         current = self._current_answer_display()
@@ -352,23 +430,24 @@ class ExamHelperApp:
 
             # The watchdog abandons only the application-level wait. A late
             # worker result is kept local and cannot update UI or history.
-            answer, timed_out = self._get_answer_with_timeout()
+            answer, error_message, screenshot, timed_out = self._get_answer_with_timeout()
             if timed_out:
                 return
 
             if answer in VALID_ANSWERS:
-                display = self._record_answer(answer)
+                screenshot_path = self._save_screenshot_preview(screenshot)
+                display = self._record_answer(answer, screenshot_path)
+                self.root.after(0, lambda: self.show_screenshot_button.config(
+                    state="normal" if screenshot_path else "disabled"
+                ))
                 self.root.after(0, self.update_ui, display, "#00ff00")
                 logger.info("Solve request completed with a valid answer")
             else:
-                # Failed requests do not change history or replace an answer
-                # the user is currently viewing.
-                display = self._current_answer_display()
-                if display is None:
-                    self.root.after(0, self.update_ui, "ANS: ERR", "#ff0000")
-                else:
-                    self.root.after(0, self.update_ui, display, "#00ff00")
-                logger.warning("Solve request completed without a valid answer")
+                # Surface the current failure; never let an older answer appear to be fresh.
+                error_message = error_message or "AI REQUEST FAILED\nCheck the selected gear and local logs."
+                self.root.after(0, lambda: self.show_screenshot_button.config(state="disabled"))
+                self.root.after(0, self.update_ui, error_message, "#ff5555")
+                logger.warning("Solve request failed visibly: %s", error_message.splitlines()[0])
 
             # Blink LED
             if answer in VALID_ANSWERS:
@@ -400,6 +479,10 @@ class ExamHelperApp:
                 logger.exception("Error stopping system tray icon")
         logger.info("Application shutdown complete")
         mark_session_end()
+        try:
+            self._screenshot_dir.cleanup()
+        except Exception:
+            logger.exception("Unable to clean up temporary session screenshots")
         self.root.destroy()
 
     def run(self):
